@@ -35,9 +35,7 @@ class MockTestScala3 extends AnyFreeSpec with MockFactory with Matchers {
       class WithTC[TC[_]](tc: TC[Int])
       type ID[A] = A
       "mock[WithTC[List]]" should compile
-      pendingUntilFixed {
-        "mock[WithTC[ID]]" should compile
-      }
+      "mock[WithTC[ID]]" should compile
     }
 
     "mock generic arguments" in {
@@ -54,6 +52,42 @@ class MockTestScala3 extends AnyFreeSpec with MockFactory with Matchers {
       "mock[A[List]]" should compile
       "mock[B[List]]" should compile
       "mock[C[List]]" should compile
+    }
+
+
+    "mock with opaque parameter types" in {
+      type MyString = MyString.Type
+      object MyString {
+        opaque type Type <: String = String
+      }
+
+      class Bar(foo: MyString)
+
+      val m = mock[Bar]
+    }
+
+    "mock with tagged parameter types" in {
+      trait Tag[+U] extends Any {
+        type Tag <: U
+      }
+      type @@[+T, +U] = T & Tag[U]
+
+      extension [T](t: T)
+        def taggedWith[U]: T @@ U = t.asInstanceOf[T @@ U]
+
+      case class CacheApi()
+      trait SettingsCache
+      trait DataCache
+
+      case class Controller(settingsCache: CacheApi @@ SettingsCache)
+
+      object RealContext {
+        val settingsCache: CacheApi @@ SettingsCache = CacheApi().taggedWith[SettingsCache]
+        val dataCache: CacheApi @@ DataCache = CacheApi().taggedWith[DataCache]
+        val contoller = Controller(settingsCache)
+      }
+
+      val controller = mock[Controller]
     }
   }
 }
