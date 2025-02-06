@@ -2,9 +2,9 @@ name: SBT CI Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ maintenance-6.x ]
   pull_request:
-    branches: [ master ]
+    branches: [ maintenance-6.x ]
 
 jobs:
   scala_2_12:
