@@ -1,6 +1,7 @@
 package org.scalamock.clazz
 
 import org.scalamock.stubs.Stub
+import org.scalamock.util.Defaultable
 
 import scala.annotation.{experimental, tailrec}
 import scala.quoted.*
@@ -19,29 +20,34 @@ private[scalamock] class Utils(using val quotes: Quotes):
       report.errorAndAbort("Can't mock a java class due to https://github.com/lampepfl/dotty/issues/18694. Extend it manually with scala and then mock")
 
     def asParent(tree: TypeTree): TypeTree | Term =
-      val constructorFieldsFilledWithNulls: List[List[Term]] =
-        // we don't care about any of the parameters, and just want to pass null, since all interesting parts will be mocked.
-        // that's simpler said than done, because if type of the argument is a primitive
-        // then null needs to be cast to that primitive type.
-        // the type could be a generic type though, which could resolve to a primitive, so we need to find the type the param
-        // should resolve to, and cast it if needed.
-        val paramsMap = {
-          val abstractParams = tree.tpe.dealias.typeSymbol.primaryConstructor.paramSymss.filter(_.exists(_.isType)).flatten
-          val resolvedParams = tpe.widen match
-            case AppliedType(_, params) => params
-            case _ => Nil
-          abstractParams.zip(resolvedParams).toMap
-        }
+      val constructorTypes = tree.tpe.dealias.typeSymbol.primaryConstructor
+        .paramSymss.flatten.filter(_.isType).map(_.name)
 
-        tree.tpe.dealias.typeSymbol.primaryConstructor.paramSymss
-          .filterNot(_.exists(_.isType))
-          .map(_.map{ sym =>
-            val target = paramsMap.getOrElse(sym.info.typeSymbol, sym.info).widen.dealias
-            if target <:< TypeRepr.of[AnyVal] then
-              Select.unique('{null}.asTerm, "asInstanceOf").appliedToType(target)
-            else
-              '{null}.asTerm
-          })
+      val constructorFields = tree.tpe.dealias.typeSymbol.primaryConstructor
+        .paramSymss.filterNot(_.exists(_.isType))
+
+      if tree.tpe.typeArgs.length < constructorTypes.length then
+        report.errorAndAbort("Not all types are applied")
+
+      val typeNamesWithIdx: Map[String, TypeRepr] =
+        constructorTypes.zip(tree.tpe.typeArgs).toMap
+
+      def resolveTypeRefs(tpe: TypeRepr): TypeRepr = tpe match
+        case TypeRef(ref, name) if tpe.typeSymbol.isTypeParam =>
+          typeNamesWithIdx(name)
+
+        case AppliedType(tycon, types) =>
+          AppliedType(resolveTypeRefs(tycon), types.map(resolveTypeRefs))
+
+        case _ => tpe
+
+      val constructorFieldsFilledWithNulls: List[List[Term]] =
+        constructorFields.map(_.map { sym =>
+          resolveTypeRefs(sym.info).asType match
+            case '[t] =>
+              Expr.summon[Defaultable[t]]
+                .fold('{ null.asInstanceOf[t] })(default => '{ $default.default.asInstanceOf[t] }).asTerm
+        })
 
       if constructorFieldsFilledWithNulls.forall(_.isEmpty) then
         tree
