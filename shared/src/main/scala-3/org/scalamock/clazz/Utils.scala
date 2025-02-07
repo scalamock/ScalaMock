@@ -117,24 +117,40 @@ private[clazz] class Utils(using val quotes: Quotes):
           case other                        => (argTypesAcc.reverse.flatten, other)
       loop(tpe, Nil, TypeRepr.of[Nothing])
 
+  @experimental
   case class MockableDefinition(idx: Int, symbol: Symbol, ownerTpe: TypeRepr):
     val mockValName = s"mock$$${symbol.name}$$$idx"
     val tpe = ownerTpe.memberType(symbol)
     private val (rawTypes, rawResType) = tpe.widen.collectTypes
     val parameterTypes = prepareTypesFor(ownerTpe.typeSymbol).map(_.tpe).init
 
-    def resTypeWithInnerTypesOverrideFor(classSymbol: Symbol): TypeRepr =
-      updatePathDependent(rawResType, List(rawResType), classSymbol)
+    @experimental
+    private def overrideThisType(where: TypeRepr, classSymbol: Symbol): TypeRepr =
+      symbol.info match
+        case tpe: LambdaType =>
+          tpe.resType match
+            case tpe: ThisType =>
+              where.substituteTypes(List(tpe.typeSymbol), List(This(classSymbol).tpe))
+            case _ =>
+              where
+        case _ =>
+          where
 
+    @experimental
+    def resTypeWithInnerTypesOverrideFor(classSymbol: Symbol): TypeRepr =
+      updatePathDependent(overrideThisType(rawResType, classSymbol), List(rawResType), classSymbol)
+
+    @experimental
     def tpeWithSubstitutedInnerTypesFor(classSymbol: Symbol): TypeRepr =
-      updatePathDependent(tpe, rawResType :: rawTypes, classSymbol)
+      updatePathDependent(overrideThisType(tpe, classSymbol), rawResType :: rawTypes, classSymbol)
 
     private def updatePathDependent(where: TypeRepr, types: List[TypeRepr], classSymbol: Symbol): TypeRepr =
       val pathDependentTypes = types.flatMap(_.collectInnerTypes(ownerTpe.typeSymbol))
       val pdUpdated = pathDependentTypes.map(_.innerTypeOverride(ownerTpe.typeSymbol, classSymbol, applyTypes = false))
       where.substituteTypes(pathDependentTypes.map(_.typeSymbol), pdUpdated)
 
-    def prepareTypesFor(classSymbol: Symbol) = (rawTypes :+ rawResType)
+    @experimental
+    def prepareTypesFor(classSymbol: Symbol) = (rawTypes :+ overrideThisType(rawResType, classSymbol))
       .map(_.innerTypeOverride(ownerTpe.typeSymbol, classSymbol, applyTypes = true))
       .map { typeRepr =>
         val adjusted =
@@ -153,6 +169,7 @@ private[clazz] class Utils(using val quotes: Quotes):
     }
 
   object MockableDefinitions:
+    @experimental
     def find(tpe: TypeRepr, name: String, paramTypes: List[TypeRepr], appliedTypes: List[TypeRepr]): String =
       def appliedTypesMatch(method: MockableDefinition, appliedTypes: List[TypeRepr]): Boolean =
         method.tpe match
@@ -172,6 +189,7 @@ private[clazz] class Utils(using val quotes: Quotes):
       method.mockValName
 
 
+    @experimental
     def apply(tpe: TypeRepr): List[MockableDefinition] =
       val methods = (tpe.typeSymbol.methodMembers.toSet -- TypeRepr.of[Object].typeSymbol.methodMembers).toList
         .filter(sym =>

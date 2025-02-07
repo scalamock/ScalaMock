@@ -92,6 +92,13 @@ class MockTestScala3 extends AnyFreeSpec with MockFactory with Matchers {
       val controller = mock[Controller]
     }
 
+    "mock method returning this.type" in {
+      val m1 = mock[ThisTypeTrait]
+
+      m1.thisTypeMethod.expects(*).returns(m1)
+
+      m1.thisTypeMethod(1) shouldBe m1
+    }
 
   }
 }
