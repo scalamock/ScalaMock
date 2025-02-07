@@ -47,6 +47,15 @@ class MockTestScala3 extends AnyFreeSpec with MockFactory with Matchers {
       "mock[WithGeneric[Int]]" should compile
     }
 
+    "mock multiple generic arguments" in {
+      class MyClass
+      class MyTycon[T]
+      class WithGeneric[T, B[_]](b: B[T], t: T)
+      "mock[WithGeneric[String, List]]" should compile
+      "mock[WithGeneric[Int, Option]]" should compile
+      "mock[WithGeneric[MyClass, MyTycon]]" should compile
+    }
+
     "mock type constructor context bounds" in {
       trait Async[F[_]]
       class A[F[_]: Async](val b: B[F])

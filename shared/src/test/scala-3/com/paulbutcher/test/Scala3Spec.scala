@@ -4,7 +4,7 @@ import org.scalamock.scalatest.MockFactory
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 
-class Scala3Spec extends AnyFunSpec with MockFactory with Matchers {
+class   Scala3Spec extends AnyFunSpec with MockFactory with Matchers {
 
 
   it("mock traits with parameters") {
