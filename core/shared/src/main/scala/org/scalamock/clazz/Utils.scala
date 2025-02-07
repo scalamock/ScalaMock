@@ -29,34 +29,30 @@ private[scalamock] class Utils(using val quotes: Quotes):
       if tree.tpe.typeArgs.length < constructorTypes.length then
         report.errorAndAbort("Not all types are applied")
 
-      val typeNamesWithIdx: Map[String, TypeRepr] =
-        constructorTypes.zip(tree.tpe.typeArgs).toMap
-
-      def resolveTypeRefs(tpe: TypeRepr): TypeRepr = tpe match
-        case TypeRef(ref, name) if tpe.typeSymbol.isTypeParam =>
-          typeNamesWithIdx(name)
-
-        case AppliedType(tycon, types) =>
-          AppliedType(resolveTypeRefs(tycon), types.map(resolveTypeRefs))
-
-        case _ => tpe
-
-      val constructorFieldsFilledWithNulls: List[List[Term]] =
-        constructorFields.map(_.map { sym =>
-          resolveTypeRefs(sym.info).asType match
-            case '[t] =>
-              Expr.summon[Defaultable[t]]
-                .fold('{ null.asInstanceOf[t] })(default => '{ $default.default.asInstanceOf[t] }).asTerm
-        })
-
-      if constructorFieldsFilledWithNulls.forall(_.isEmpty) then
+      if constructorFields.forall(_.isEmpty) then
         tree
       else
-        Select(
+        val con = Select(
           New(TypeIdent(tree.tpe.typeSymbol)),
           tree.tpe.typeSymbol.primaryConstructor
         ).appliedToTypes(tree.tpe.typeArgs)
-          .appliedToArgss(constructorFieldsFilledWithNulls)
+
+        val typeNames = {
+          @tailrec
+          def collectTypes(tpe: TypeRepr, acc: Map[String, TypeRepr]): Map[String, TypeRepr] =
+            tpe match
+              case MethodType(names, types, res) => collectTypes(res, acc ++ names.zip(types))
+              case tpe => acc
+
+          collectTypes(con.tpe.widenTermRefByName, Map.empty)
+        }
+
+        con.appliedToArgss(
+          constructorFields
+            .map(_.map { sym => typeNames(sym.name).asType })
+            .map(_.map { case '[t] => '{ ${Expr.summon[Defaultable[t]].get}.default }.asTerm })
+        )
+    end asParent
 
     if isTrait then
       List(TypeTree.of[Object], asParent(TypeTree.of[T]), TypeTree.of[scala.reflect.Selectable])
@@ -242,18 +238,29 @@ private[scalamock] class Utils(using val quotes: Quotes):
     private val (rawTypes, rawResType) = tpe.widen.collectTypes
     val parameterTypes = prepareTypesFor(ownerTpe.typeSymbol).map(_.tpe).init
 
+    private def overrideThisType(where: TypeRepr, classSymbol: Symbol): TypeRepr =
+      symbol.info match
+        case tpe: LambdaType =>
+          tpe.resType match
+            case tpe: ThisType =>
+              where.substituteTypes(List(tpe.typeSymbol), List(This(classSymbol).tpe))
+            case _ =>
+              where
+        case _ =>
+          where
+
     def resTypeWithInnerTypesOverrideFor(classSymbol: Symbol): TypeRepr =
-      updatePathDependent(rawResType, List(rawResType), classSymbol)
+      updatePathDependent(overrideThisType(rawResType, classSymbol), List(rawResType), classSymbol)
 
     def tpeWithSubstitutedInnerTypesFor(classSymbol: Symbol): TypeRepr =
-      updatePathDependent(tpe, rawResType :: rawTypes, classSymbol)
+      updatePathDependent(overrideThisType(tpe, classSymbol), rawResType :: rawTypes, classSymbol)
 
     private def updatePathDependent(where: TypeRepr, types: List[TypeRepr], classSymbol: Symbol): TypeRepr =
       val pathDependentTypes = types.flatMap(_.collectInnerTypes(ownerTpe.typeSymbol))
       val pdUpdated = pathDependentTypes.map(_.innerTypeOverride(ownerTpe.typeSymbol, classSymbol, applyTypes = false))
       where.substituteTypes(pathDependentTypes.map(_.typeSymbol), pdUpdated)
 
-    def prepareTypesFor(classSymbol: Symbol) = (rawTypes :+ rawResType)
+    def prepareTypesFor(classSymbol: Symbol) = (rawTypes :+ overrideThisType(rawResType, classSymbol))
       .map(_.innerTypeOverride(ownerTpe.typeSymbol, classSymbol, applyTypes = true))
       .map { typeRepr =>
         val adjusted =
