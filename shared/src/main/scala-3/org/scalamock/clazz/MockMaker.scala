@@ -50,36 +50,30 @@ private[clazz] object MockMaker:
       if tree.tpe.typeArgs.length < constructorTypes.length then
         report.errorAndAbort("Not all types are applied")
 
-      val typeNamesWithIdx: Map[String, TypeRepr] =
-        constructorTypes.zip(tree.tpe.typeArgs).toMap
-
-      def resolveTypeRefs(tpe: TypeRepr): TypeRepr = tpe match
-        case TypeRef(ref, name) if tpe.typeSymbol.isTypeParam =>
-          typeNamesWithIdx(name)
-
-        case AppliedType(tycon, types) =>
-          AppliedType(resolveTypeRefs(tycon), types.map(resolveTypeRefs))
-
-        case _ => tpe
-
-      val constructorFieldsFilledWithNulls: List[List[Term]] =
-        constructorFields.map(_.map { sym =>
-          resolveTypeRefs(sym.info).asType match
-            case '[t] =>
-              Expr.summon[Defaultable[t]]
-                .fold('{ null.asInstanceOf[t] })(default => '{ $default.default.asInstanceOf[t] }).asTerm
-        })
-
-      if constructorFieldsFilledWithNulls.forall(_.isEmpty) then
+      if constructorFields.forall(_.isEmpty) then
         tree
       else
-        Select(
+        val con = Select(
           New(TypeIdent(tree.tpe.typeSymbol)),
           tree.tpe.typeSymbol.primaryConstructor
         ).appliedToTypes(tree.tpe.typeArgs)
-         .appliedToArgss(constructorFieldsFilledWithNulls)
 
+        val typeNames = {
+          @scala.annotation.tailrec
+          def collectTypes(tpe: TypeRepr, acc: Map[String, TypeRepr]): Map[String, TypeRepr] =
+            tpe match
+              case MethodType(names, types, res) => collectTypes(res, acc ++ names.zip(types))
+              case tpe => acc
 
+          collectTypes(con.tpe.widenTermRefByName, Map.empty)
+        }
+
+        con.appliedToArgss(
+          constructorFields
+            .map(_.map { sym => typeNames(sym.name).asType })
+            .map(_.map { case '[t] => '{ ${Expr.summon[Defaultable[t]].get}.default }.asTerm })
+        )
+    end asParent
 
     val parents =
       if isTrait then
