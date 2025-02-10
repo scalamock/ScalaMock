@@ -75,7 +75,7 @@ class ReallySimpleExampleTest extends AnyFunSuite, Matchers, Stubs:
 
     formatterStub.format.returns(_ => "Ah, Mr Bond. I've been expecting you")
 
-    Greetings.sayHello("Mr Bond", formatterStub) shouldBe "Ah, Mr Bond. I've been expecting you"
+    Greetings.sayHello("Mr Bond", formatterStub)
 
     formatterStub.format.times shouldBe 1 // method called exactly once
     formatterStub.format.calls shouldBe List("Mr Bond") // check that name is Mr Bond, this list has one item per each method invokation
@@ -91,7 +91,7 @@ Also you can set up result depending on method arguments.
 
     formatterStub.format.returns(name => s"Ah, $name. I've been expecting you")
 
-    Greetings.sayHello("Mr Grinch", formatterStub) shouldBe "Ah, Mr Grinch. I've been expecting you"
+    Greetings.sayHello("Mr Grinch", formatterStub)
 
     formatterStub.format.times shouldBe 1 // method called exactly once
     formatterStub.format.calls shouldBe List("Mr Grinch") // name is Mr Grinch
@@ -215,21 +215,21 @@ class MatchResultObserverTest extends FlatSpec, Stubs:
     val userDetailsServiceStub = stub[PlayerDatabase]
 
     // configure stubs
-    countryLeaderBoardMock.addVictoryForCountry.returns(_ => ())
+    countryLeaderBoardStub.addVictoryForCountry.returns(_ => ())
 
     userDetailsServiceStub.getPlayerById.returns:
       case loser.id => loser
       case winner.id => winner
 
     // run system under test
-    val matchResultObserver = new MatchResultObserver(userDetailsServiceStub, countryLeaderBoardMock)
+    val matchResultObserver = new MatchResultObserver(userDetailsServiceStub, countryLeaderBoardStub)
 
     matchResultObserver.recordMatchResult(MatchResult(winner = winner.id, loser = loser.id))
 
     // verify
     assert(countryLeaderBoardStub.addVictoryForCountry.calls == List(Countries.Russia))
 
-    assert(userDetailsServiceStub.getPlayerById.calls == List(winner))
+    assert(userDetailsServiceStub.getPlayerById.calls == List(winner.id))
     
     // verify order of calls using CallLog
     assert(userDetailsServiceStub.getPlayerById.isBefore(countryLeaderBoardStub.addVictoryForCountry))
