@@ -27,6 +27,8 @@ scalaVersion := "3.4.3" // or higher
 Test / scalacOptions += "-experimental"
 ```
 
+You can meet an issue with this setup in Intellij, please read https://github.com/ScalaMock/ScalaMock/issues/592
+
 ### Alternative experimental API
 Offers you:
 
