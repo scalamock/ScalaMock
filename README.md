@@ -34,7 +34,7 @@ Offers you:
 
 1. Concise and powerful syntax with no complexity overhead
 2. Data based approach. You can get arguments or number of times method was called
-3. No exceptions thrown
+3. No exceptions thrown, except only when stub is not set
 4. Support for functional effects like `ZIO` or `cats-effect IO`
 
 ### Dependencies
