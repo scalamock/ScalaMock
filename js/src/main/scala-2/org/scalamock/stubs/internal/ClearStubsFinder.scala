@@ -1,4 +1,4 @@
-// Copyright (c) ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
+// Copyright (c) 2011-2025 ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -18,19 +18,24 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package org.scalamock.clazz
+package org.scalamock.stubs.internal
 
-import scala.quoted.*
+import org.scalamock.util.MacroAdapter
 
-object MockFunctionFinder:
-  /**
-   * Given something of the structure <|o.m _|> where o is a mock object
-   * and m is a method, find the corresponding MockFunction instance
-   */
-  @scala.annotation.experimental
-  def findMockFunction[M: Type](f: Expr[Any])(using quotes: Quotes): Expr[M] =
-    val utils = new Utils(using quotes)
-    import utils.quotes.reflect.*
-    utils
-      .searchTermWithMethod(f.asTerm, TypeRepr.of[M].typeArgs.init)
-      .selectReflect[M](_.mockValName)
+private[scalamock]
+object ClearStubsFinder {
+  import MacroAdapter.Context
+  def find(c: Context)(
+    obj: c.Expr[Unit]
+  ): c.Expr[Unit] = {
+    import c.universe._
+
+    c.Expr[Unit](
+      q"""{
+          import scala.scalajs.js
+          $obj.getClass.getMethod("stubs$$macro$$clear").nn
+          .asInstanceOf[js.Dynamic].applyDynamic(${TermName("stubs$macro$clear")})()
+        }"""
+    )
+  }
+}

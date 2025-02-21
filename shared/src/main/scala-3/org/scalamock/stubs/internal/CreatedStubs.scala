@@ -1,4 +1,4 @@
-// Copyright (c) ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
+// Copyright (c) 2011-2025 ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -17,20 +17,24 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+package org.scalamock.stubs.internal
 
-package org.scalamock.clazz
+import org.scalamock.stubs.Stub
 
-import scala.quoted.*
+import java.util.concurrent.atomic.AtomicReference
 
-object MockFunctionFinder:
-  /**
-   * Given something of the structure <|o.m _|> where o is a mock object
-   * and m is a method, find the corresponding MockFunction instance
-   */
-  @scala.annotation.experimental
-  def findMockFunction[M: Type](f: Expr[Any])(using quotes: Quotes): Expr[M] =
-    val utils = new Utils(using quotes)
-    import utils.quotes.reflect.*
-    utils
-      .searchTermWithMethod(f.asTerm, TypeRepr.of[M].typeArgs.init)
-      .selectReflect[M](_.mockValName)
+private[stubs] class CreatedStubs:
+  private val stubs: AtomicReference[List[Stub[Any]]] = new AtomicReference(Nil)
+
+  def bind[T](stub: Stub[T]): Stub[T] =
+    stubs.updateAndGet(stub :: _)
+    stub
+
+  def clearAll(): Unit =
+    stubs.updateAndGet { stubs =>
+      stubs.foreach:
+        _
+          .asInstanceOf[scala.reflect.Selectable]
+          .applyDynamic(ClearStubsMethodName)()
+      stubs
+    }

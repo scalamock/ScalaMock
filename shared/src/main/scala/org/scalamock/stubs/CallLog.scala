@@ -1,4 +1,4 @@
-// Copyright (c) ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
+// Copyright (c) 2011-2025 ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -18,19 +18,29 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package org.scalamock.clazz
+package org.scalamock.stubs
 
-import scala.quoted.*
+import java.util.concurrent.atomic.AtomicReference
 
-object MockFunctionFinder:
-  /**
-   * Given something of the structure <|o.m _|> where o is a mock object
-   * and m is a method, find the corresponding MockFunction instance
-   */
-  @scala.annotation.experimental
-  def findMockFunction[M: Type](f: Expr[Any])(using quotes: Quotes): Expr[M] =
-    val utils = new Utils(using quotes)
-    import utils.quotes.reflect.*
-    utils
-      .searchTermWithMethod(f.asTerm, TypeRepr.of[M].typeArgs.init)
-      .selectReflect[M](_.mockValName)
+class CallLog {
+  override def toString: String = internal.calledMethods.mkString("\n")
+
+  object internal {
+    private val methodsRef: AtomicReference[List[String]] = new AtomicReference(Nil)
+    private val uniqueIdx: AtomicReference[Int] = new AtomicReference(0)
+
+    def nextIdx: Int = uniqueIdx.updateAndGet(_ + 1)
+
+    def write(methodName: String): Unit = {
+      methodsRef.getAndUpdate(methodName :: _)
+      ()
+    }
+
+    def clear(): Unit = {
+      methodsRef.set(Nil)
+      uniqueIdx.set(0)
+    }
+
+    def calledMethods: List[String] = internal.methodsRef.get().reverse
+  }
+}

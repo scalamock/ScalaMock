@@ -1,4 +1,4 @@
-// Copyright (c) ScalaMock Contributors (https://github.com/paulbutcher/ScalaMock/graphs/contributors)
+// Copyright (c) ScalaMock Contributors (https://github.com/ScalaMock/ScalaMock/graphs/contributors)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,7 +21,6 @@
 package org.scalamock.clazz
 
 import org.scalamock.context.MockContext
-import org.scalamock.util.Defaultable
 
 import scala.quoted.*
 import scala.reflect.Selectable
@@ -34,56 +33,8 @@ private[clazz] object MockMaker:
     val utils = Utils(using quotes)
     import utils.quotes.reflect.*
     val tpe = TypeRepr.of[T]
-    val isTrait = tpe.dealias.typeSymbol.flags.is(Flags.Trait)
-    val isJavaClass = tpe.classSymbol.exists(sym => sym.flags.is(Flags.JavaDefined) && !sym.flags.is(Flags.Trait) && !sym.flags.is(Flags.Abstract))
-
-    if (isJavaClass)
-      report.errorAndAbort("Can't mock a java class due to https://github.com/lampepfl/dotty/issues/18694. Extend it manually with scala and then mock")
-
-    def asParent(tree: TypeTree): TypeTree | Term =
-      val constructorTypes = tree.tpe.dealias.typeSymbol.primaryConstructor
-        .paramSymss.flatten.filter(_.isType).map(_.name)
-
-      val constructorFields = tree.tpe.dealias.typeSymbol.primaryConstructor
-        .paramSymss.filterNot(_.exists(_.isType))
-
-      if tree.tpe.typeArgs.length < constructorTypes.length then
-        report.errorAndAbort("Not all types are applied")
-
-      if constructorFields.forall(_.isEmpty) then
-        tree
-      else
-        val con = Select(
-          New(TypeIdent(tree.tpe.typeSymbol)),
-          tree.tpe.typeSymbol.primaryConstructor
-        ).appliedToTypes(tree.tpe.typeArgs)
-
-        val typeNames = {
-          @scala.annotation.tailrec
-          def collectTypes(tpe: TypeRepr, acc: Map[String, TypeRepr]): Map[String, TypeRepr] =
-            tpe match
-              case MethodType(names, types, res) => collectTypes(res, acc ++ names.zip(types))
-              case tpe => acc
-
-          collectTypes(con.tpe.widenTermRefByName, Map.empty)
-        }
-
-        con.appliedToArgss(
-          constructorFields
-            .map(_.map { sym => typeNames(sym.name).asType })
-            .map(_.map { case '[t] => '{ ${Expr.summon[Defaultable[t]].get}.default }.asTerm })
-        )
-    end asParent
-
-    val parents =
-      if isTrait then
-        List(TypeTree.of[Object], asParent(TypeTree.of[T]), TypeTree.of[Selectable])
-      else
-        List(asParent(TypeTree.of[T]), TypeTree.of[Selectable])
-
-
     val mockableDefinitions = utils.MockableDefinitions(tpe)
-
+    val parents = utils.parentsOf[T]
     def createDefaultMockNameSymbol(classSymbol: Symbol) =
       Symbol.newVal(classSymbol, MockDefaultNameValName, TypeRepr.of[String], Flags.EmptyFlags, Symbol.noSymbol)
 
@@ -198,7 +149,7 @@ private[clazz] object MockMaker:
                         "asInstanceOf"
                       ),
                       definition.tpe
-                        .resolveParamRefs(definition.resTypeWithInnerTypesOverrideFor(classSymbol), args)
+                        .prepareResType(definition.resTypeWithInnerTypesOverrideFor(classSymbol), args)
                         .asType match { case '[t] => List(TypeTree.of[t]) }
                     )
                   )

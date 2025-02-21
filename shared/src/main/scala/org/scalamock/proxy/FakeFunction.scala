@@ -29,7 +29,8 @@ import org.scalamock.function
 abstract class FakeFunction(mockContext: MockContext, name: Symbol)
     extends function.FakeFunction(mockContext, name) with NiceToString {
 
-  def handle(args: Array[AnyRef]): Any = handle(seq2Product(args))
+  def handle(args: Array[AnyRef]): Any =
+    handle(if (args == null) None else seq2Product(args.toIndexedSeq))
 
   class ExpectationHandler {
     def apply(args: MockParameter[Any]*) =
