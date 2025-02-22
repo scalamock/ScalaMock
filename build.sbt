@@ -12,14 +12,25 @@ val commonSettings = Defaults.coreDefaultSettings ++ Seq(
   scalacOptions ++= Seq("-deprecation", "-unchecked", "-feature", "-release:8")
 )
 
-lazy val scalamock = crossProject(JSPlatform, JVMPlatform) in file(".") settings(
+lazy val root = project.in(file("."))
+  .settings(
+    publish / skip := true
+  )
+  .aggregate(
+    scalamock.jvm,
+    scalamock.js,
+    `scalamock-zio`.jvm,
+    `scalamock-zio`.js,
+    `scalamock-cats-effect`.jvm,
+    `scalamock-cats-effect`.js
+  )
+
+lazy val scalamock = crossProject(JSPlatform, JVMPlatform)
+  .in(file("core"))
+  .settings(
     commonSettings,
     crossScalaSettings,
     name := "scalamock",
-    Compile / packageBin / publishArtifact := true,
-    Compile / packageDoc / publishArtifact := true,
-    Compile / packageSrc / publishArtifact := true,
-    Test / publishArtifact := false,
     Compile / doc / scalacOptions ++= Opts.doc.title("ScalaMock") ++
       Opts.doc.version(version.value) ++ Seq("-doc-root-content", "rootdoc.txt", "-version"),
     libraryDependencies ++= Seq(
@@ -28,16 +39,53 @@ lazy val scalamock = crossProject(JSPlatform, JVMPlatform) in file(".") settings
     )
   )
 
-lazy val examples = project in file("examples") settings(
-  commonSettings,
-  crossScalaSettings,
-  name := "ScalaMock Examples",
-  publish / skip := true,
-  libraryDependencies ++= Seq(
-    scalatest.value % Test,
-    specs2.value % Test
+lazy val `scalamock-zio` = crossProject(JSPlatform, JVMPlatform)
+  .in(file("zio"))
+  .settings(
+    name := "scalamock-zio",
+    commonSettings,
+    crossScalaSettings,
+    libraryDependencies ++= {
+      val zioVersion = "2.1.14"
+      Seq(
+        "dev.zio" %%% "zio" % zioVersion,
+        "dev.zio" %%% "zio-test" % zioVersion % Test,
+        "dev.zio" %%% "zio-test-sbt" % zioVersion % Test
+      )
+    }
   )
-) dependsOn scalamock.jvm
+  .jsSettings(name := "scalamock-zio")
+  .jvmSettings(name := "scalamock-zio")
+  .dependsOn(scalamock)
+
+
+lazy val `scalamock-cats-effect` = crossProject(JSPlatform, JVMPlatform)
+  .in(file("cats-effect"))
+  .settings(
+    name := "scalamock-cats-effect",
+    commonSettings,
+    crossScalaSettings,
+    libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-effect" % "3.5.7",
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
+    )
+  )
+  .jsSettings(name := "scalamock-cats-effect")
+  .jvmSettings(name := "scalamock-cats-effect")
+  .dependsOn(scalamock)
+
+lazy val examples = project
+  .in(file("core/examples"))
+  .settings(
+    commonSettings,
+    crossScalaSettings,
+    name := "ScalaMock Examples",
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      scalatest.value % Test,
+      specs2.value % Test
+    )
+  ) dependsOn scalamock.jvm
 
 def crossScalaSettings = {
   def addDirsByScalaVersion(path: String): Def.Initialize[Seq[sbt.File]] =
@@ -50,7 +98,7 @@ def crossScalaSettings = {
       }
     }
   Seq(
-    crossScalaVersions := Seq("2.12.20", "2.13.14", scalaVersion.value),
+    crossScalaVersions := Seq("2.12.20", "2.13.15", scalaVersion.value),
     Compile / unmanagedSourceDirectories ++= addDirsByScalaVersion("src/main").value,
     Test / unmanagedSourceDirectories ++= addDirsByScalaVersion("src/test").value,
     libraryDependencies ++= {

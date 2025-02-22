@@ -17,3 +17,4 @@ target/
 *.sublime-workspace
 sonatype.sbt
 .bsp/
+.metals/
