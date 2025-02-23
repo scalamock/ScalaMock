@@ -17,18 +17,22 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
 package org.scalamock.stubs.internal
 
-@annotation.implicitNotFound(msg = "Implicit instance for ${T} in scope.")
-trait NotGiven[T]
+import java.util.concurrent.atomic.AtomicReference
 
-object NotGiven {
-  trait Impl[A]
-  object Impl {
-    implicit def amb1[T](implicit ev: T): NotGiven[T] = null
-    implicit def amb2[T]: Impl[T] = null
+private[stubs] class CreatedStubs {
+  private val stubs: AtomicReference[List[Any]] = new AtomicReference(Nil)
+
+  def bind[T](stub: T): T = {
+    stubs.updateAndGet(stub :: _)
+    stub
   }
 
-  implicit def refute[T](implicit dummy: Impl[T]): NotGiven[T] = new NotGiven[T] {}
+  def clearAll(): Unit =
+    stubs.updateAndGet { stubs =>
+      stubs.foreach(ClearStubs.clear(_))
+      stubs
+    }
+
 }

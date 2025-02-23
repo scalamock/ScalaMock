@@ -24,8 +24,8 @@ import scala.language.higherKinds
 
 /** Allows to integrate functional effects */
 private[stubs]
-trait StubIO[F[+_, +_]] {
-  type Underlying[+A, +B] = F[A, B]
+trait StubIO {
+  type F[+A, +B]
 
   def die(ex: Throwable): F[Nothing, Nothing]
   def succeed[T](t: => T): F[Nothing, T]

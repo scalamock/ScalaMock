@@ -20,24 +20,10 @@
 
 package org.scalamock.stubs.internal
 
-import org.scalamock.util.MacroAdapter
-
 private[scalamock]
-object ClearStubsFinder {
-  import MacroAdapter.Context
-  def find(c: Context)(
-    obj: c.Expr[Any]
-  ): c.Expr[Unit] = {
-    import c.universe._
-
-    c.Expr[Unit](
-      q"""
-      $obj
-        .getClass()
-        .getMethod(${TermName("stubs$macro$clear")})
-        .invoke($obj)
-        .asInstanceOf[Unit]
-     """
-    )
-  }
+object ClearStubs {
+  def clear(obj: Any): Unit =
+    obj
+      .asInstanceOf[scala.scalajs.js.Dynamic]
+      .selectDynamic("stubs$macro$clear")
 }

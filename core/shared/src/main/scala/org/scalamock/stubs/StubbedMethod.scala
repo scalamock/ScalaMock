@@ -22,124 +22,101 @@ package org.scalamock.stubs
 
 import java.util.concurrent.atomic.AtomicReference
 
-trait StubbedMethod[Args, R] {
-  /**
-   * Allows to set result for method with arguments.
-   * {{{
-   *   trait Foo {
-   *     def foo1(x: Int): Int
-   *     def foo2(x: Int, y: Int): Int
-   *   }
-   *
-   *   val foo = stub[Foo]
-   *
-   *   foo.foo1.returns {
-   *     case 1 => 2
-   *     case 2 => 5
-   *     case _ => 0
-   *   }
-   *
-   *   foo.foo2.returns {
-   *     case (0, 0) => 1
-   *     case _ => 0
-   *   }
-   *
-   *   foo.foo1(2) // 5
-   *   foo.foo2(0, 0) // 1
-   *   }}}
-   */
-  def returns(f: Args => R)(implicit notUnit: internal.NotGiven[Args =:= Unit]): Unit
+trait StubbedMethod0[R] extends StubbedMethod.Order {
+  type Result = R
 
-  /** Allows to set result for method without arguments.
-   * {{{
-   *   trait Foo {
-   *     def foo0: Int
-   *.  }
-   *
-   *   val foo = stub[Foo]
-   *
-   *   foo.foo0.returns(5)
-   *   foo.foo0 // 5
-   *   }}}
-   * */
-  def returns(f: R)(implicit unit: Args =:= Unit): Unit
+  def returns(f: => Result): Unit
 
-
-  /**
-   * Allows to get number of times method was executed.
-   * {{{
-   *   trait Foo {
-   *     def foo1(x: Int): Int
-   *.  }
-   *   val foo = stub[Foo]
-   *   foo.foo1.returns(_ => 1)
-   *
-   *   foo.foo1(2)
-   *   foo.foo1(3)
-   *
-   *   foo.foo1.times // 2
-   * }}}
-   */
   def times: Int
+}
 
-  /**
-   * Allows to get caught method arguments.
-   * For multiple arguments - returns them tupled.
-   * One list item per call.
-   * {{{
-   *   trait Foo {
-   *     def foo1(x: Int): Int
-   *     def foo2(x: Int, y: Int): Int
-   *   }
-   *
-   *   val foo = stub[Foo]
-   *
-   *   foo.foo1.returns(_ => 1)
-   *   foo.foo2.returns(_ => 1)
-   *
-   *   foo.foo1(2)
-   *   foo.foo1(2)
-   *   foo.foo2(0, 1)
-   *   foo.foo2(2, 3)
-   *
-   *   foo.foo1.calls // List(2, 2)
-   *   foo.foo2.calls // List((0, 1), (2, 3))
-   * }}}
-   */
-  def calls(implicit notUnit: internal.NotGiven[Args =:= Unit]): List[Args]
+trait StubbedMethod[A, R] extends StubbedMethod.Order {
+  type Args = A
+  type Result = R
+
+  def returns(f: Args => Result): Unit
+
+  def times: Int
+  
+  final def times(args: Args): Int = calls.count(_ == args)
+
+  def calls: List[Args]
 }
 
 object StubbedMethod {
-  class Internal[Args, R] extends StubbedMethod[Args, R] {
-    private[scalamock] val callsRef: AtomicReference[List[Args]] =
+  sealed trait Order {
+    def isBefore(other: Order)(implicit callLog: CallLog): Boolean
+
+    def isAfter(other: Order)(implicit callLog: CallLog): Boolean
+    
+    def asString: String
+  }
+  
+  class Internal[A, R](
+    override val asString: String, 
+    callLog: Option[CallLog],
+    io: Option[StubIO]
+  ) extends StubbedMethod[A, R]
+      with StubbedMethod0[R] {
+    override type Result = R
+    override type Args = A
+
+    override def toString = asString
+    
+    private val callsRef: AtomicReference[List[Args]] =
       new AtomicReference[List[Args]](Nil)
 
-    private[scalamock] val resultRef: AtomicReference[Option[Args => R]] =
-      new AtomicReference[Option[Args => R]](None)
+    private val resultRef: AtomicReference[Option[Args => Result]] =
+      new AtomicReference[Option[Args => Result]](None)
 
-    def impl(args: Args) = {
-      callsRef.updateAndGet(args :: _)
-      resultRef.get() match {
-        case Some(f) => f(args)
-        case None => throw new NotImplementedError()
+    def impl(args: Args): Result =
+      io match {
+        case None =>
+          callLog.foreach(_.internal.write(asString))
+          callsRef.updateAndGet(args :: _)
+          resultRef.get() match {
+            case Some(f) => f(args)
+            case None => throw new NotImplementedError()
+          }
+        case Some(io) =>
+          io.flatMap(
+            io.succeed {
+              callLog.foreach(_.internal.write(asString))
+              callsRef.updateAndGet(args :: _)
+            }
+          ) { _ =>
+            resultRef.get() match {
+              case Some(f) => f(args).asInstanceOf[io.F[Any, Any]]
+              case None => io.die(new NotImplementedError())
+            }
+          }.asInstanceOf[Result]
       }
-    }
 
     def clear(): Unit = {
       callsRef.set(Nil)
       resultRef.set(None)
     }
 
-    def returns(f: Args => R)(implicit not: internal.NotGiven[Args =:= Unit]): Unit =
+    override def returns(f: Args => Result): Unit =
       resultRef.set(Some(f))
 
-    def returns(f: R)(implicit ev: Args =:= Unit): Unit =
+    override def returns(f: => Result): Unit =
       resultRef.set(Some(_ => f))
 
-    def times: Int =
+    override def times: Int =
       callsRef.get().length
 
-    def calls(implicit not: internal.NotGiven[Args =:= Unit]): List[Args] =
+    override def calls: List[Args] =
       callsRef.get().reverse
+
+    override def isBefore(other: Order)(implicit callLog: CallLog): Boolean = {
+      val actual = callLog.internal.calledMethods
+      actual.indexOf(other.asString, actual.indexOf(asString)) != -1
+    }
+
+    override def isAfter(other: Order)(implicit callLog: CallLog): Boolean = {
+      val actual = callLog.internal.calledMethods
+      actual.indexOf(asString, actual.indexOf(other.asString)) != -1
+    }
   }
 }

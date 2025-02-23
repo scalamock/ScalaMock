@@ -33,25 +33,24 @@ object StubbedMethodFinder {
    * and m is a method, find the corresponding MockFunction instance
    */
   def find[
-    Args: c.WeakTypeTag,
-    R: c.WeakTypeTag
+    M: c.WeakTypeTag
   ](
     c: Context
   )(
     f: c.Expr[Any],
     actuals: List[c.universe.Type]
-  ): c.Expr[StubbedMethod[Args, R]] = {
+  ): c.Expr[M] = {
     import c.universe._
     val utils = new MacroUtils[c.type](c)
     import utils._
 
-    def mockedFunctionGetter(obj: Tree, name: Name, targs: List[Type]): c.Expr[StubbedMethod[Args, R]] =
-      StubbedMethodFinderImpl.find[Args, R](c)(obj, name, targs, actuals)
+    def mockedFunctionGetter(obj: Tree, name: Name, targs: List[Type]): c.Expr[M] =
+      StubbedMethodFinderImpl.find[M](c)(obj, name, targs, actuals)
 
-    def transcribeTree(tree: Tree, targs: List[Type] = Nil): c.Expr[StubbedMethod[Args, R]] = {
+    def transcribeTree(tree: Tree, targs: List[Type] = Nil): c.Expr[M] = {
       tree match {
         case Select(qualifier, name) => mockedFunctionGetter(qualifier, name, targs)
-        case Block(stats, expr) => c.Expr[StubbedMethod[Args, R]](Block(stats, transcribeTree(expr).tree)) // see issue #62
+        case Block(stats, expr) => c.Expr[M](Block(stats, transcribeTree(expr).tree)) // see issue #62
         case Typed(expr, tpt) => transcribeTree(expr)
         case Function(vparams, body) => transcribeTree(body)
         case Apply(fun, args) => transcribeTree(fun)

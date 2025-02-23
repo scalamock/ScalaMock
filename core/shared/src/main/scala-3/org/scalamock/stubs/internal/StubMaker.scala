@@ -21,7 +21,7 @@
 package org.scalamock.stubs.internal
 
 import org.scalamock.clazz.Utils
-import org.scalamock.stubs.{CallLog, Stub, StubIO, StubbedMethod}
+import org.scalamock.stubs.{CallLog, Stub, StubIO, StubbedMethod, StubbedMethod0}
 
 import scala.annotation.{experimental, tailrec}
 import scala.collection.mutable
@@ -37,7 +37,8 @@ private[stubs] class StubMaker(
 
   @experimental
   def newInstance[T: Type](
-    collector: Expr[CreatedStubs]
+    collector: Expr[CreatedStubs],
+    stubUniqueIndexGenerator: Expr[StubUniqueIndexGenerator]
   ): Expr[Stub[T]] =
     val tpe = TypeRepr.of[T]
     val parents = parentsOf[T]
@@ -79,37 +80,64 @@ private[stubs] class StubMaker(
               ),
           )
         } ::: List(
-          Some(
-            Symbol.newMethod(
-              parent = classSymbol,
-              name = ClearStubsMethodName,
-              tpe = TypeRepr.of[Unit],
-              flags = Flags.EmptyFlags,
-              privateWithin = Symbol.noSymbol
-            )
+          Symbol.newMethod(
+            parent = classSymbol,
+            name = ClearStubsMethodName,
+            tpe = TypeRepr.of[Unit],
+            flags = Flags.EmptyFlags,
+            privateWithin = Symbol.noSymbol
           ),
-          log.map { _ =>
-            Symbol.newVal(
-              parent = classSymbol,
-              name = UniqueStubIdx,
-              tpe = TypeRepr.of[Int],
-              flags = Flags.EmptyFlags,
-              privateWithin = Symbol.noSymbol
-            )
-          }
-        ).flatten,
+          Symbol.newVal(
+            parent = classSymbol,
+            name = UniqueStubIdx,
+            tpe = TypeRepr.of[Int],
+            flags = Flags.EmptyFlags,
+            privateWithin = Symbol.noSymbol
+          )
+        ),
       selfType = None
     )
 
     val classDef = ClassDef(
       cls = classSymbol,
       parents = parents,
-      body = methods.flatMap { method =>
+      body = List(
+        DefDef(
+          symbol = classSymbol.methodMember(ClearStubsMethodName).head,
+          _ =>
+            Some(
+              Block(
+                methods.map { method => '{ ${ method.stubbedMethodRef(classSymbol) }.clear() }.asTerm },
+                '{}.asTerm
+              )
+            )
+        ),
+        ValDef(
+          symbol = classSymbol.declaredField(UniqueStubIdx),
+          Some('{ $stubUniqueIndexGenerator.nextIdx() }.asTerm)
+        )
+      ) ::: methods.flatMap { method =>
+        val resTypeWithOverride = method.resTypeWithInnerTypesOverrideFor(classSymbol)
         List(
           ValDef(
             classSymbol.declaredField(method.stubValName),
             Some {
-              '{ new StubbedMethod.Internal[Any, Any] }.asTerm
+              val callLog = Expr.summon[CallLog] match {
+                case Some(log) => '{ Some(${log}) }
+                case None => '{ None }
+              }
+              val idx = Ref(classSymbol.declaredField(UniqueStubIdx)).asExprOf[Int]
+              val ioOpt = Expr.summon[StubIO].filter(_.isMatches(resTypeWithOverride)) match
+                case Some(io) => '{ Some($io) }
+                case None => '{None}
+
+              '{
+                new StubbedMethod.Internal[Any, Any](
+                  s"<stub-" + $idx + "> " + ${ Expr(method.show) },
+                  $callLog,
+                  $ioOpt
+                )
+              }.asTerm
             }
           ),
           if (method.symbol.isValDef)
@@ -118,40 +146,17 @@ private[stubs] class StubMaker(
             DefDef(
               symbol = method.symbol.overridingSymbol(classSymbol),
               params => Some {
-                val resTpe = method.tpe.prepareResType(method.resTypeWithInnerTypesOverrideFor(classSymbol), params)
+                val resTpe = method.tpe.prepareResType(resTypeWithOverride, params)
                 resTpe.asType match
                   case '[res] =>
-                    val ioOpt = Expr.summon[StubIO[?]].filter(_.isMatches(resTpe))
                     val tupledArgs = tupled(params.flatMap {_.collect { case term: Term => term }}).asExpr
-                    '{ ${ method.stubApiRef(classSymbol) }.impl(${tupledArgs}).asInstanceOf[res] }
+                    '{ ${ method.stubbedMethodRef(classSymbol) }.impl(${tupledArgs}).asInstanceOf[res] }
                       .asTerm
                       .changeOwner(method.symbol.overridingSymbol(classSymbol))
               }
             )
         )
-      } :::
-        List(
-          Some(
-            DefDef(
-              symbol = classSymbol.methodMember(ClearStubsMethodName).head,
-              _ =>
-                Some(
-                  Block(
-                    methods.map { method => '{ ${ method.stubApiRef(classSymbol) }.clear() }.asTerm },
-                    '{}.asTerm
-                  )
-                )
-            )
-          ),
-          log.map { log =>
-            ValDef(
-              symbol = classSymbol.declaredField(UniqueStubIdx),
-              Some {
-                '{${log}.internal.nextIdx}.asTerm
-              }
-            )
-          }
-        ).flatten
+      }
     )
 
     val instance = Block(
@@ -164,48 +169,17 @@ private[stubs] class StubMaker(
         TypeTree.of[T & scala.reflect.Selectable]
       )
     )
+    //println(instance.show)
     '{
       ${ collector }.bind(${ instance.asExprOf[T] }.asInstanceOf[Stub[T]])
     }
   end newInstance
 
-  @experimental
-  def parseMethods(calls: Expr[Seq[Any]]): Expr[List[String]] =
-    Expr.ofList {
-      parseCalls(calls.asTerm).map {
-        case select: Select =>
-          searchTermWithMethod(select, Nil).show
-
-        case Lambda(paramClause, term) =>
-          searchTermWithMethod(term, paramClause.map(_.tpt.tpe)).show
-
-        case Inlined(_, _, Lambda(paramClause, term)) =>
-          searchTermWithMethod(term, paramClause.map(_.tpt.tpe)).show
-
-        case tree =>
-          report.errorAndAbort(s"Not a method selection: ${tree.show(using Printer.TreeStructure)}")
-      }
-    }
-
   @tailrec
-  private def parseCalls(term: Term): List[Term] =
-    term match
-      case Inlined(_, _, term) =>
-        parseCalls(term)
-
-      case Typed(Repeated(List(term: Inlined), _), _) =>
-        parseCalls(term)
-
-      case Typed(Repeated(lambdas, _), _) =>
-        lambdas
-
-      case other =>
-        report.errorAndAbort(s"Unknown tree: ${other.show(using Printer.TreeStructure)}")
-
-
-  @tailrec
-  private def tupleTypeToList(tpe: TypeRepr,
-                              acc: mutable.ListBuffer[TypeRepr] = new ListBuffer[TypeRepr]): List[TypeRepr] =
+  private def tupleTypeToList(
+    tpe: TypeRepr,
+    acc: mutable.ListBuffer[TypeRepr] = new ListBuffer[TypeRepr]
+  ): List[TypeRepr] =
     tpe.asType match
       case '[h *: t] =>
         tupleTypeToList(TypeRepr.of[t], acc += TypeRepr.of[h])
@@ -216,15 +190,11 @@ private[stubs] class StubMaker(
 
 
   @experimental
-  def getStubbed0[R: Type](select: Expr[R]): Expr[StubbedMethod[Unit, R]] =
-    searchTermWithMethod(select.asTerm, Nil).selectReflect[StubbedMethod[Unit, R]](_.stubValName)
+  def getStubbed0[R: Type](select: Expr[R]): Expr[StubbedMethod0[R]] =
+    searchTermWithMethod(select.asTerm, Nil).selectReflect[StubbedMethod0[R]](_.stubValName)
 
   @experimental
-  def getStubbed1[T1: Type, R: Type](select: Expr[T1 => R]): Expr[StubbedMethod[T1, R]] =
-    searchTermWithMethod(select.asTerm, List(TypeRepr.of[T1])).selectReflect[StubbedMethod[T1, R]](_.stubValName)
-
-  @experimental
-  def getStubbed[Args <: NonEmptyTuple: Type, R: Type](select: Expr[Args => R]): Expr[StubbedMethod[Args, R]] =
+  def getStubbed[Args: Type, R: Type](select: Expr[Any]): Expr[StubbedMethod[Args, R]] =
     searchTermWithMethod(select.asTerm, tupleTypeToList(TypeRepr.of[Args])).selectReflect[StubbedMethod[Args, R]](_.stubValName)
 
   private def tupled(args: List[Term]): Term =
@@ -239,62 +209,18 @@ private[stubs] class StubMaker(
             .appliedToArgs(List(el))
         }
 
-  extension (value: StubWithMethod)
-    def show: Expr[String] = '{
-      val idx = ${value.selectReflect[Int](_ => UniqueStubIdx)}
-      val method = ${Expr(value.method.show)}
-      s"<stub-$idx> $method"
-    }
-
 
   extension (method: MockableDefinition)
-    private def stubApiRef(classSymbol: Symbol): Expr[StubbedMethod.Internal[Any, Any]] =
+    private def stubbedMethodRef(classSymbol: Symbol): Expr[StubbedMethod.Internal[Any, Any]] =
       Ref(classSymbol.declaredField(method.stubValName)).asExprOf[StubbedMethod.Internal[Any, Any]]
 
     private def show: String =
       given Printer[TypeRepr] = Printer.TypeReprShortCode
-      s"Stub[${method.ownerTpe.show}].${method.symbol.name}${method.tpe.show}"
+      s"${method.ownerTpe.show}.${method.symbol.name}${method.tpe.show}"
 
 
-  extension (io: Expr[StubIO[?]])
+  extension (io: Expr[StubIO])
     private def isMatches(resTpe: TypeRepr): Boolean =
       val ioTerm = io.asTerm
-      val ioTpe = ioTerm.tpe.select(ioTerm.tpe.typeSymbol.typeMember("Underlying"))
+      val ioTpe = ioTerm.tpe.select(ioTerm.tpe.typeSymbol.typeMember("F"))
       resTpe <:< AppliedType(ioTpe, List(TypeRepr.of[Any], TypeRepr.of[Any]))
-
-    private def wrap(resTpe: TypeRepr, updateCalls: Expr[Unit], result: Expr[Any]): Term =
-      val ioTerm = io.asTerm
-      val (errorArgTpe, resArgTpe) = resTpe.dealias.typeArgs match
-        case List(_, err, res) => (err, res)
-        case List(err, res) => (err, res)
-        case List(res) => (TypeRepr.of[Nothing], res)
-        case _ => report.errorAndAbort(s"$resTpe is not a type constructor")
-
-      resTpe.asType match
-        case '[res] =>
-          TypeApply(
-            Select.unique(
-              Apply(
-                Apply(
-                  TypeApply(
-                    Select.unique(ioTerm, "flatMap"),
-                    List(
-                      Inferred(TypeRepr.of[Nothing]),
-                      Inferred(errorArgTpe),
-                      Inferred(TypeRepr.of[Unit]),
-                      Inferred(resArgTpe)
-                    )
-                  ),
-                  List(
-                    Apply(
-                      TypeApply(Select.unique(ioTerm, "succeed"), List(TypeTree.of[Unit])),
-                      List(updateCalls.asTerm)
-                    )
-                  )
-                ),
-                List('{ (_: Unit) => ${ result }.asInstanceOf[res] }.asTerm)
-              ),
-              "asInstanceOf"
-            ),
-            List(TypeTree.of[res])
-          )

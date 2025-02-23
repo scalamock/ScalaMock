@@ -8,8 +8,7 @@ object StubbedMethodFinderImpl {
   import MacroAdapter.Context
 
   def find[
-    Args: c.WeakTypeTag,
-    R: c.WeakTypeTag
+    M: c.WeakTypeTag
   ](
     c: Context
   )(
@@ -17,7 +16,7 @@ object StubbedMethodFinderImpl {
     name: c.Name, 
     targs: List[c.Type], 
     actuals: List[c.universe.Type]
-  ): c.Expr[StubbedMethod[Args, R]] = {
+  ): c.Expr[M] = {
     import c.universe._
 
     def mockFunctionName(name: Name, t: Type, targs: List[Type]) = {
@@ -31,10 +30,10 @@ object StubbedMethodFinderImpl {
     val fullName = TermName(mockFunctionName(name, obj.tpe, targs))
 
 
-    val code = c.Expr[StubbedMethod[Args, R]](
+    val code = c.Expr[M](
       q"""{
       import scala.scalajs.js
-      $obj.asInstanceOf[js.Dynamic].$fullName.asInstanceOf[${weakTypeOf[StubbedMethod[Args, R]]}]
+      $obj.asInstanceOf[js.Dynamic].$fullName.asInstanceOf[${weakTypeOf[M]}]
     }""")
     code
   }

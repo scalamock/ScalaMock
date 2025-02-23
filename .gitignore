@@ -18,3 +18,5 @@ target/
 sonatype.sbt
 .bsp/
 .metals/
+.bloop/
+.vscode/

@@ -23,10 +23,14 @@ package org.scalamock.stubs.internal
 import org.scalamock.util.MacroAdapter.Context
 import org.scalamock.util.{MacroAdapter, MacroUtils}
 import org.scalamock.stubs.StubbedMethod
+import org.scalamock.stubs.{CallLog, StubIO}
 
 private[scalamock]
 class StubMaker[C <: Context](val ctx: C) {
-  class StubMakerInner[T: ctx.WeakTypeTag] {
+  class StubMakerInner[T: ctx.WeakTypeTag](
+    createdStubs: ctx.Expr[CreatedStubs],
+    stubUniqueIndexGenerator: ctx.Expr[StubUniqueIndexGenerator]
+  ) {
     import ctx.universe._
 
     import scala.language.reflectiveCalls
@@ -94,13 +98,16 @@ class StubMaker[C <: Context](val ctx: C) {
     // def <|name|>(p1: T1, p2: T2, ...): T = <|mockname|>(p1, p2, ...)
     def methodDef(m: MethodSymbol, methodType: Type, body: Tree): DefDef = {
       val params = buildForwarderParams(methodType)
+      val resType = forwarderParamType(finalResultType(methodType))
+
       DefDef(
         Modifiers(OVERRIDE),
         m.name,
         m.typeParams map { p => internalTypeDef(p) },
         params,
-        forwarderParamType(finalResultType(methodType)),
-        body)
+        resType,
+        body
+      )
     }
 
     def methodImpl(m: MethodSymbol, methodType: Type, body: Tree): DefDef = {
@@ -177,32 +184,63 @@ class StubMaker[C <: Context](val ctx: C) {
 
     // val stub$<methodName>$<idx> = new StubApi.Internal[(T1, T2, ...), R]
 
-    def mockMethod(m: MethodSymbol, idx: Int): ValDef = {
+    def mockMethod(m: MethodSymbol): ValDef = {
       val mt = resolvedType(m)
       val clazz = typeOf[StubbedMethod.Internal[_, _]]
+      val finalRt = finalResultType(mt)
       val types = List(
         tupledType(paramTypes(mt).map(mockParamType)),
-        mockParamType(finalResultType(mt))
+        mockParamType(finalRt)
       )
       val termName = mockFunctionName(m)
       val additionalAnnotations = if(isScalaJs) List(jsExport(termName.encodedName.toString)) else Nil
+      val summonedLog = ctx.inferImplicitValue(typeOf[CallLog], silent = true)
+      val summonedIO = ctx.inferImplicitValue(typeOf[StubIO], silent = true)
+      val summonedIOOpt = (if (summonedIO != EmptyTree) Some(summonedIO) else None)
+        .filter { io =>
+          finalRt <:< appliedType(io.tpe.member(TermName("F")), List(typeOf[Any], typeOf[Any]))
+        }
       ValDef(
         Modifiers().mapAnnotations(additionalAnnotations ::: _),
         mockFunctionName(m),
         AppliedTypeTree(Ident(clazz.typeSymbol), types), // see issue #24
-        callConstructor(New(AppliedTypeTree(Ident(clazz.typeSymbol), types)))
+        callConstructor(
+          New(AppliedTypeTree(Ident(clazz.typeSymbol), types)),
+          generateMockMethodName(m, m.typeSignature),
+          if (summonedLog == EmptyTree) q"None" else q"Some($summonedLog)",
+          summonedIOOpt.fold(q"None": Tree)(io => q"Some($io)"),
+        )
       )
     }
 
-    def clearMethod(methods: List[MethodSymbol]): ValDef =
+    def clearMethod(methods: List[MethodSymbol]): DefDef = {
+      val termName = TermName("stubs$macro$clear")
+      val additionalAnnotations = if(isScalaJs) List(jsExport(termName.encodedName.toString)) else Nil
+
+      DefDef(
+        Modifiers().mapAnnotations(additionalAnnotations ::: _),
+        termName,
+        Nil,
+        Nil,
+        TypeTree(typeOf[Unit]),
+        Block(
+          methods.map(mockFunctionName(_))
+            .map { name => Apply(Select(Select(This(anon), name), TermName("clear")), Nil) },
+          q"()"
+        )
+      )
+    }
+
+    def mockIdxVal = {
+      val termName = TermName("stubs$macro$idx")
       ValDef(
         Modifiers(),
-        TermName("stubs$macro$clear"),
-        TypeTree(typeOf[Unit]),
-        methods.map(mockFunctionName(_))
-          .map { name => Apply(Select(This(anon), name), Nil) }
-          .foldLeft(q"")((acc, m) => q"$acc; $m")
+        termName,
+        TypeTree(typeOf[Int]),
+        q"$stubUniqueIndexGenerator.nextIdx()"
       )
+    }
+
 
     // def <init>() = super.<init>()
     def initDef = {
@@ -235,7 +273,30 @@ class StubMaker[C <: Context](val ctx: C) {
         TypeTree(),
         Block(
           List(constructorCall),
-          Literal(Constant(()))))
+          Literal(Constant(())))
+      )
+    }
+
+    private def generateMockMethodName(method: MethodSymbol, methodType: Type): Tree = {
+      val mockType: Type = typeToMock.resultType
+      val mockTypeNamePart: String = mockType.typeSymbol.name.toString
+      val mockTypeArgsPart: String = generateTypeArgsString(mockType.typeArgs)
+      val idx: Tree = Select(This(anon), TermName("stubs$macro$idx"))
+
+      val methodTypePart: String = methodType.toString
+      val methodNamePart: String = method.name.toString
+
+      // "<%s> %s%s.%s".format(objectNamePart, mockTypeNamePart, mockTypeArgsPart, methodNamePart, methodTypeParamsPart)
+      val formatStr = applyOn(scalaPredef, "augmentString", literal("<stub-%s> %s%s.%s%s"))
+      applyOn(formatStr, "format",
+        idx, literal(mockTypeNamePart), literal(mockTypeArgsPart), literal(methodNamePart), literal(methodTypePart))
+    }
+
+
+    private def generateTypeArgsString(typeArgs: List[Any]): String = {
+      if (typeArgs.nonEmpty)
+        "[%s]".format(typeArgs.mkString(","))
+      else ""
     }
 
     // new <|typeToMock|> { <|members|> }
@@ -263,8 +324,8 @@ class StubMaker[C <: Context](val ctx: C) {
           m.asInstanceOf[reflect.internal.HasFlags].isDeferred) //! TODO - stop using internal if/when this gets into the API
     }.toList
     val forwarders = methodsToMock map forwarderImpl
-    val mocks = methodsToMock.zipWithIndex.map { case (m, idx) => mockMethod(m, idx) }
-    val members = forwarders ++ mocks
+    val mocks = methodsToMock.map(mockMethod(_))
+    val members = clearMethod(methodsToMock) :: mockIdxVal :: (forwarders ++ mocks)
 
     def make = {
       val result = castTo(anonClass(members), typeToMock)
@@ -272,10 +333,10 @@ class StubMaker[C <: Context](val ctx: C) {
               //println("------------")
               //println(showRaw(result))
               //println("------------")
-              println(show(result))
+              //println(show(result))
               //println("------------")
 
-      ctx.Expr[T](result)
+      ctx.Expr[T](q"$createdStubs.bind($result)")
     }
   }
 }

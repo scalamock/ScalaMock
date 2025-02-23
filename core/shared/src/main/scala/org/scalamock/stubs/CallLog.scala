@@ -23,24 +23,25 @@ package org.scalamock.stubs
 import java.util.concurrent.atomic.AtomicReference
 
 class CallLog {
+  /** Use it only for debug purposes. String representation of called methods can change */
   override def toString: String = internal.calledMethods.mkString("\n")
 
+  /** Consider not using this internal API. It can change in the future */
   object internal {
     private val methodsRef: AtomicReference[List[String]] = new AtomicReference(Nil)
-    private val uniqueIdx: AtomicReference[Int] = new AtomicReference(0)
-
-    def nextIdx: Int = uniqueIdx.updateAndGet(_ + 1)
 
     def write(methodName: String): Unit = {
       methodsRef.getAndUpdate(methodName :: _)
       ()
     }
 
-    def clear(): Unit = {
+    def clear(): Unit =
       methodsRef.set(Nil)
-      uniqueIdx.set(0)
-    }
 
     def calledMethods: List[String] = internal.methodsRef.get().reverse
   }
+}
+
+object CallLog {
+  def apply(): CallLog = new CallLog()
 }
