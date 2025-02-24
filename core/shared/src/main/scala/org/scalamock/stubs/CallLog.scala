@@ -22,6 +22,7 @@ package org.scalamock.stubs
 
 import java.util.concurrent.atomic.AtomicReference
 
+/** Allows to check order of executed methods. Should be declared before stub generation  */
 class CallLog {
   /** Use it only for debug purposes. String representation of called methods can change */
   override def toString: String = internal.calledMethods.mkString("\n")

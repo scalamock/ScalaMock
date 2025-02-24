@@ -26,19 +26,25 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.language.experimental.macros
 import scala.language.implicitConversions
 
-trait Stubs {
+private[scalamock]
+trait StubsBase {
+  final implicit val createdStubs: internal.CreatedStubs = new internal.CreatedStubs()
+  final implicit val stubUniqueIndexGenerator: internal.StubUniqueIndexGenerator = new internal.StubUniqueIndexGenerator()
 
+  /** Resets all recorded stub functions and arguments.
+   *  This is useful if you want to create your stub once per suite.
+   *  Note that in such case test cases should run sequentially
+   */
+  final def resetStubs(): Unit = createdStubs.clearAll()
+
+  /** Generates an object of type T with possibility to record methods arguments and set-up method results */
   def stub[T](implicit
     createdStubs: internal.CreatedStubs,
     stubUniqueIndexGenerator: internal.StubUniqueIndexGenerator
   ): T = macro StubMakerImpl.stub[T]
+}
 
-  final implicit val createdStubs: internal.CreatedStubs = new internal.CreatedStubs()
-  final implicit val stubUniqueIndexGenerator: internal.StubUniqueIndexGenerator = new internal.StubUniqueIndexGenerator()
-
-  final def resetStubs(): Unit = createdStubs.clearAll()
-
-
+trait Stubs extends StubsBase {
   implicit def stubbed[R](f: () => R): StubbedMethod0[R] =
     macro StubMakerImpl.toStubbedMethod0[R]
 

@@ -221,6 +221,7 @@ private[stubs] class StubMaker(
 
   extension (io: Expr[StubIO])
     private def isMatches(resTpe: TypeRepr): Boolean =
-      val ioTerm = io.asTerm
-      val ioTpe = ioTerm.tpe.select(ioTerm.tpe.typeSymbol.typeMember("F"))
-      resTpe <:< AppliedType(ioTpe, List(TypeRepr.of[Any], TypeRepr.of[Any]))
+      resTpe <:< AppliedType(
+        io.asTerm.tpe.select(io.asTerm.tpe.typeSymbol.typeMember("F")),
+        List(TypeRepr.of[Any], TypeRepr.of[Any])
+      )

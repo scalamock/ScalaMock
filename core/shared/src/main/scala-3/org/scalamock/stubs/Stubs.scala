@@ -25,9 +25,13 @@ import scala.language.implicitConversions
 /** Indicates that object of type T was generated */
 opaque type Stub[+T] <: T = T
 
-trait Stubs {
+private[scalamock]
+trait StubsBase {
+
   /** Collects all generated stubs */
   final given stubs: internal.CreatedStubs = internal.CreatedStubs()
+  
+  /** Generates unique index for each stub */
   final given internal.StubUniqueIndexGenerator = internal.StubUniqueIndexGenerator()
 
   /**
@@ -39,7 +43,9 @@ trait Stubs {
 
   /** Generates an object of type T with possibility to record methods arguments and set-up method results */
   inline def stub[T]: Stub[T] = stubImpl[T]
+}
 
+trait Stubs extends StubsBase {
   implicit inline def stubbed[R](inline f: => R): StubbedMethod0[R] =
     stubbed0Impl[R](f)
 
@@ -108,6 +114,4 @@ trait Stubs {
     
   implicit inline def stubbed[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R](inline f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22) => R): StubbedMethod[(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22), R] =
     stubbed22Impl[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R](f)
-  
-
 }

@@ -198,7 +198,7 @@ class StubMaker[C <: Context](val ctx: C) {
       val summonedIO = ctx.inferImplicitValue(typeOf[StubIO], silent = true)
       val summonedIOOpt = (if (summonedIO != EmptyTree) Some(summonedIO) else None)
         .filter { io =>
-          finalRt <:< appliedType(io.tpe.member(TermName("F")), List(typeOf[Any], typeOf[Any]))
+          finalRt <:< appliedType(io.tpe.member(TypeName("F")), List(typeOf[Any], typeOf[Any]))
         }
       ValDef(
         Modifiers().mapAnnotations(additionalAnnotations ::: _),

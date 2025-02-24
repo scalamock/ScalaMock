@@ -23,7 +23,7 @@ package org.scalamock.stubs
 import scala.language.higherKinds
 
 /** Allows to integrate functional effects */
-private[stubs]
+private[scalamock]
 trait StubIO {
   type F[+A, +B]
 
