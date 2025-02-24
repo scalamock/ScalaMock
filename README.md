@@ -1,12 +1,69 @@
-# ScalaMock 
+![GitHub Release](https://img.shields.io/github/v/release/scalamock/scalamock?color=blue])
+
+# What is ScalaMock?
+
+ScalaMock is native Scala mocking framework.
+
+---
+Mocking is a software testing technique that involves creating simulated components,
+known as mocks or stubs, to mimic the behavior of real components in a system.
+The purpose of such testing is to isolate and evaluate specific parts of a software application
+by replacing real dependencies with mocks or stubs.
+
+---
+
+Full documentation is on official website: [scalamock.org](https://scalamock.org/)
+
+## ScalaMock 7
+
+### Alternative API
+Offers you:
+
+1. Concise and powerful syntax with no complexity overhead
+2. Data based approach. You can get arguments or number of times method was called
+3. No exceptions thrown, except when stub is not set yet
+4. Support for functional effects like `ZIO` or `cats-effect IO`
+
+### Dependencies
+
+```scala
+libraryDependencies ++= Seq(
+  // core module
+  "org.scalamock" %% "scalamock" % "<latest version in badge>",
+  // zio integration
+  "org.scalamock" %% "scalamock-zio" % "latest version in badge",
+  // cats-effect integration
+  "org.scalamock" %% "scalamock-cats-effect" % "latest version in badge"
+)
+```
+
+### QuickStart
+
+Quickstart is [here](https://scalamock.org/quick-start/).
+
+ZIO/CE integration is [here](https://scalamock.org/user-guide/integration/).
+
+Scala 2 Examples:
+1. [ScalaTest + Scala Future](./core/jvm/src/test/scala-3/newapi/UserAuthServiceSpec.scala)
+2. [zio-test](./zio/shared/src/test/scala-3/newapi/ZIOUserAuthServiceSpec.scala)
+3. [munit-cats-effect](./cats-effect/shared/src/test/scala-3/newapi/CEUserAuthServiceSpec.scala)
+
+Scala 3 Examples:
+1. [ScalaTest + Scala Future](./core/jvm/src/test/scala-2/newapi/UserAuthServiceSpec.scala)
+2. [zio-test](./zio/shared/src/test/scala-2/newapi/ZIOUserAuthServiceSpec.scala)
+3. [munit-cats-effect](./cats-effect/shared/src/test/scala-2/newapi/CEUserAuthServiceSpec.scala)
+
+
+
+## ScalaMock 
 
 Native Scala mocking.
 
 Official website: [scalamock.org](https://scalamock.org/)
 
-## Examples
+### Examples
 
-### Expectations-First Style
+#### Expectations-First Style
 
 ```scala
 test("drawline interaction with turtle") {
@@ -23,7 +80,7 @@ test("drawline interaction with turtle") {
 }
 ```
 
-### Record-then-Verify (Mockito) Style
+#### Record-then-Verify (Mockito) Style
 
 ```scala
 test("drawline interaction with turtle") {
@@ -44,7 +101,7 @@ test("drawline interaction with turtle") {
 
 A more complete example is on our [Quickstart](http://scalamock.org/quick-start/) page.
 
-## Features
+### Features
 
 * Fully typesafe
 * Full support for Scala features such as:
@@ -60,7 +117,7 @@ A more complete example is on our [Quickstart](http://scalamock.org/quick-start/
 * Scala 2.10 support was included up to ScalaMock 4.2.0
 * Scala 2.11 support was included up to ScalaMock 5.2.0
 
-## Using ScalaMock
+### Using ScalaMock
 
 Artefacts are published to Maven Central and Sonatype OSS.
 
@@ -71,7 +128,7 @@ libraryDependencies += Seq("org.scalamock" %% "scalamock" % "5.2.0" % Test,
     "org.scalatest" %% "scalatest" % "3.2.0" % Test)
 ```
 
-## Scala 3 Migration Notes
+### Scala 3 Migration Notes
 
 1. Type should be specified for methods with by-name parameters
 ```scala 3
@@ -118,11 +175,11 @@ val mm = mock[JavaClassExtended] // should be used instead
 
 
 
-## Documentation
+### Documentation
 
 For usage in Maven or Gradle, integration with Specs2, and more example examples see the [User Guide](http://scalamock.org/user-guide/)
 
-## Acknowledgements
+### Acknowledgements
 
 YourKit is kindly supporting open source projects with its full-featured Java Profiler.
 YourKit, LLC is the creator of innovative and intelligent tools for profiling
