@@ -31,9 +31,9 @@ libraryDependencies ++= Seq(
   // core module
   "org.scalamock" %% "scalamock" % "<latest version in badge>",
   // zio integration
-  "org.scalamock" %% "scalamock-zio" % "latest version in badge",
+  "org.scalamock" %% "scalamock-zio" % "<latest version in badge>",
   // cats-effect integration
-  "org.scalamock" %% "scalamock-cats-effect" % "latest version in badge"
+  "org.scalamock" %% "scalamock-cats-effect" % "<latest version in badge>"
 )
 ```
 
