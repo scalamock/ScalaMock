@@ -2,9 +2,9 @@ name: SBT CI Build
 
 on:
   push:
-    branches: [ maintenance-6.x ]
+    branches: [ series/7.x ]
   pull_request:
-    branches: [ maintenance-6.x ]
+    branches: [ series/7.x ]
 
 jobs:
   scala_2_12:
@@ -20,7 +20,7 @@ jobs:
         distribution: 'adopt'
     - uses: sbt/setup-sbt@v1
     - name: Run tests
-      run: sbt ++2.12.18 test
+      run: sbt ++2.12.20 test
       
   scala_2_13:
 
@@ -35,7 +35,7 @@ jobs:
         distribution: 'adopt'
     - uses: sbt/setup-sbt@v1
     - name: Run tests
-      run: sbt ++2.13.12 test
+      run: sbt ++2.13.15 test
 
   scala_3:
 
