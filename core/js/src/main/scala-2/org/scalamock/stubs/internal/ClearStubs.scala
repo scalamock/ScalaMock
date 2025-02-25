@@ -25,5 +25,5 @@ object ClearStubs {
   def clear(obj: Any): Unit =
     obj
       .asInstanceOf[scala.scalajs.js.Dynamic]
-      .selectDynamic("stubs$macro$clear")
+      .applyDynamic("stubs$macro$clear")()
 }

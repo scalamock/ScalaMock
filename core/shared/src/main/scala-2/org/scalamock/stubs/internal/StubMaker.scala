@@ -221,7 +221,7 @@ class StubMaker[C <: Context](val ctx: C) {
         Modifiers().mapAnnotations(additionalAnnotations ::: _),
         termName,
         Nil,
-        Nil,
+        List(List()),
         TypeTree(typeOf[Unit]),
         Block(
           methods.map(mockFunctionName(_))
